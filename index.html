@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgriSense AI - Smart Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; }
+  body { height: 100vh; background: #000; overflow: hidden; position: relative; }
+  #canvas3d { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+  
+  .brand { position: absolute; top: 30px; left: 40px; display: flex; align-items: center; gap: 10px; z-index: 10000; }
+  .logo-text { font-size: 22px; font-weight: 600; color: white; }
+  .agri { background: linear-gradient(45deg, #00f5ff, #ff00c8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+  .chat-container {
+    position: absolute; z-index: 9999; right: 60px; top: 50%; transform: translateY(-50%) translateX(120%);
+    width: 400px; height: 600px; background: rgba(255,255,255,0.08); backdrop-filter: blur(30px);
+    border-radius: 25px; padding: 20px; display: flex; flex-direction: column; transition: 0.6s ease;
+    border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 0 40px rgba(0,255,255,0.2);
+  }
+  .chat-container.active { transform: translateY(-50%) translateX(0); }
+  .chat-box { flex: 1; overflow-y: auto; margin: 15px 0; display: flex; flex-direction: column; gap: 12px; }
+  
+  .message { padding: 10px 15px; border-radius: 15px; max-width: 85%; font-size: 14px; color: #0e0f0f; line-height: 1.5; }
+  .user { background: #00f5ff; color: #000; align-self: flex-end; border-bottom-right-radius: 2px; }
+  .ai { background: rgba(255, 255, 255, 0.1); align-self: flex-start; border-bottom-left-radius: 2px; }
+
+  .input-area { display: flex; gap: 8px; }
+  input { flex: 1; padding: 12px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); color: #0a0909; outline: none; }
+  button { padding: 10px 15px; border-radius: 12px; border: none; background: linear-gradient(45deg, #00f5ff, #ff00c8); color: #fff; cursor: pointer; font-weight: bold; transition: 0.3s; }
+  
+  .mic-active { animation: pulse 1.5s infinite; background: #ff00c8 !important; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 0, 200, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(255, 0, 200, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 0, 200, 0); } }
+  
+  .toggle-btn { position: absolute; right: 40px; bottom: 40px; width: 65px; height: 65px; border-radius: 50%; background: linear-gradient(45deg, #00f5ff, #ff00c8); display: flex; justify-content: center; align-items: center; font-size: 26px; color: white; cursor: pointer; z-index: 10001; }
+</style>
+</head>
+<body>
+
+<canvas id="canvas3d"></canvas>
+<div class="brand">
+  <div class="logo-icon">🌾</div>
+  <div class="logo-text"><span class="agri">AgriSense</span> AI</div>
+</div>
+
+<div class="chat-container" id="chatContainer">
+  <div class="chat-header" style="color: rgb(12, 126, 240); text-align: center;">🤖 Bilingual Assistant</div>
+  <div class="chat-box" id="chatBox"></div>
+  <div class="input-area">
+    <input type="text" id="userInput" placeholder="Ask in Hindi or English..." onkeypress="if(event.key === 'Enter') sendMessage()"/>
+    <button id="micBtn" onclick="startVoice()">🎤</button>
+    <button onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<div class="toggle-btn" onclick="toggleChat()">💬</div>
+
+<script>
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = (SpeechRecognition) ? new SpeechRecognition() : null;
+const synth = window.speechSynthesis;
+
+function toggleChat() {
+  document.getElementById("chatContainer").classList.toggle("active");
+}
+
+function startVoice() {
+  if (synth.speaking) {
+    synth.cancel(); // FEATURE: Click mic to stop AI talking
+    return;
+  }
+  if (!recognition) return alert("Speech recognition not supported in this browser.");
+
+  recognition.lang = 'hi-IN'; // Better at picking up both Hindi and English
+  const micBtn = document.getElementById("micBtn");
+  micBtn.classList.add("mic-active");
+  recognition.start();
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    document.getElementById("userInput").value = transcript;
+    
+    // Voice command to stop
+    const lower = transcript.toLowerCase();
+    if (lower.includes("stop") || lower.includes("ruko") || lower.includes("बस")) {
+      synth.cancel();
+    } else {
+      sendMessage();
+    }
+  };
+  recognition.onend = () => micBtn.classList.remove("mic-active");
+}
+
+function speak(text) {
+  if (synth.speaking) synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  
+  // Detect if Hindi (Devanagari) is present
+  const isHindi = /[\u0900-\u097F]/.test(text);
+  const voices = synth.getVoices();
+
+  if (isHindi) {
+    utterance.lang = 'hi-IN';
+    utterance.voice = voices.find(v => v.lang.includes('hi')) || voices[0];
+  } else {
+    utterance.lang = 'en-IN'; // Indian-English accent
+    utterance.voice = voices.find(v => v.lang.includes('en-IN')) || voices.find(v => v.lang.includes('en')) || voices[0];
+  }
+
+  utterance.rate = 1.0;
+  synth.speak(utterance);
+}
+
+async function sendMessage() {
+  const input = document.getElementById("userInput");
+  const message = input.value;
+  if (!message) return;
+
+  const chatBox = document.getElementById("chatBox");
+  const userDiv = document.createElement("div");
+  userDiv.className = "message user";
+  userDiv.innerText = message;
+  chatBox.appendChild(userDiv);
+  input.value = "";
+
+  const aiDiv = document.createElement("div");
+  aiDiv.className = "message ai";
+  aiDiv.innerText = "...";
+  chatBox.appendChild(aiDiv);
+  chatBox.scrollTop = chatBox.scrollHeight;
+
+  try {
+    const response = await fetch("http://localhost:3000/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+    
+    const data = await response.json();
+    aiDiv.innerText = data.reply;
+    speak(data.reply);
+  } catch (e) {
+    aiDiv.innerText = "Error: Check if server is running!";
+  }
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// Pre-load voices
+window.speechSynthesis.onvoiceschanged = () => synth.getVoices();
+</script>
+
+<script type="module">
+  import { Application } from "https://unpkg.com/@splinetool/runtime/build/runtime.js";
+  const app = new Application(document.getElementById('canvas3d'));
+  app.load('https://prod.spline.design/WIC-x4kFwEIdFv0R/scene.splinecode');
+</script>
+</body>
+</html>
